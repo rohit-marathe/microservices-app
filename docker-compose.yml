@@ -1,0 +1,44 @@
+version: '3.8'
+
+services:
+  login-service:
+    build: ./login-service
+    ports:
+      - "3001:3001"
+    environment:
+      - PORT=3001
+    networks:
+      - microservices-network
+
+  orders-service:
+    build: ./orders-service
+    ports:
+      - "3002:3002"
+    environment:
+      - PORT=3002
+    networks:
+      - microservices-network
+
+  profile-service:
+    build: ./profile-service
+    ports:
+      - "3003:3003"
+    environment:
+      - PORT=3003
+    networks:
+      - microservices-network
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "80:80"
+    depends_on:
+      - login-service
+      - orders-service
+      - profile-service
+    networks:
+      - microservices-network
+
+networks:
+  microservices-network:
+    driver: bridge
