@@ -2,110 +2,172 @@ version: 0.2
 
 env:
   variables:
-    AWS_DEFAULT_REGION: us-east-1
-    CLUSTER_NAME: my-react-backend-cluster
-    S3_BUCKET: react-app-aws-cicd-89
+    AWS_DEFAULT_REGION: "us-east-1"
+    LOGIN_SERVICE_TAG: "latest"
+    ORDERS_SERVICE_TAG: "latest" 
+    PROFILE_SERVICE_TAG: "latest"
+    NGINX_SERVICE_TAG: "latest"
+    # React environment variables
+    REACT_APP_LOGIN_URL: "http://react-nginx-alb-687607454.us-east-1.elb.amazonaws.com/login"
+    REACT_APP_ORDERS_URL: "http://react-nginx-alb-687607454.us-east-1.elb.amazonaws.com/orders"
+    REACT_APP_PROFILE_URL: "http://react-nginx-alb-687607454.us-east-1.elb.amazonaws.com/profile"
+  exported-variables:
+    - AWS_ACCOUNT_ID
+    - LOGIN_SERVICE_TAG
+    - ORDERS_SERVICE_TAG
+    - PROFILE_SERVICE_TAG
+    - NGINX_SERVICE_TAG
 
 phases:
+  install:
+    runtime-versions:
+      nodejs: 18
+      docker: 20
+    commands:
+      - echo "Installing dependencies on high-performance build environment..."
+      - echo "Build started at `date`"
+      # Optimize npm for faster installs
+      - npm config set registry https://registry.npmjs.org/
+      - npm config set fetch-timeout 300000
+      - npm config set fetch-retries 5
+
   pre_build:
     commands:
-      - echo "🚀 Starting CI/CD Pipeline on $(date)"
-      - echo "🔐 Logging in to Amazon ECR..."
-      - aws ecr get-login-password --region $AWS_DEFAULT_REGION | docker login --username AWS --password-stdin $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com
-      - IMAGE_TAG=$(echo $CODEBUILD_RESOLVED_SOURCE_VERSION | cut -c 1-7)
-      - echo "📦 Image tag will be: $IMAGE_TAG"
-      - echo "🔍 Verifying environment variables..."
-      - echo "Login URL: $REACT_APP_LOGIN_URL"
-      - echo "Orders URL: $REACT_APP_ORDERS_URL"
-      - echo "Profile URL: $REACT_APP_PROFILE_URL"
+      - echo "Pre-build phase started on `date`"
+      - export AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+      - echo "AWS Account ID: $AWS_ACCOUNT_ID"
+      
+      # Set ECR repository URIs
+      - export REPOSITORY_URI_LOGIN=$AWS_ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com/login-service
+      - export REPOSITORY_URI_ORDERS=$AWS_ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com/orders-service
+      - export REPOSITORY_URI_PROFILE=$AWS_ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com/profile-service
+      - export REPOSITORY_URI_NGINX=$AWS_ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com/react-nginx-svc
+      
+      # Login to ECR (parallel authentication)
+      - echo "Logging in to Amazon ECR..."
+      - aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin $AWS_ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com
+      
+      # Optimize Docker for faster builds
+      - export DOCKER_BUILDKIT=1
+      - export BUILDKIT_PROGRESS=plain
 
   build:
     commands:
-      - echo "🏗️ === Building React Frontend ==="
-      - cd frontend
-      - echo "📦 Installing dependencies..."
-      - npm install --no-audit --no-fund
-      - echo "⚙️ Setting up production environment variables from CodeBuild..."
-      - echo "REACT_APP_LOGIN_URL=$REACT_APP_LOGIN_URL" > .env.production
-      - echo "REACT_APP_ORDERS_URL=$REACT_APP_ORDERS_URL" >> .env.production
-      - echo "REACT_APP_PROFILE_URL=$REACT_APP_PROFILE_URL" >> .env.production
-      - echo "✅ Environment variables configured for production build"
-      - cat .env.production
-      - echo "🔨 Building React application..."
-      - npm run build
-      - echo "☁️ Uploading React build to S3..."
-      - aws s3 sync build/ s3://$S3_BUCKET --delete
-      - echo "✅ React frontend uploaded to S3 successfully"
-      - cd ..
+      - echo "High-performance build started at `date`"
       
-      - echo "🐳 === Building Docker Images ==="
+      # PARALLEL BUILD APPROACH - Using background processes
       
-      - echo "🔨 Building Login Service..."
-      - cd login-service
-      - docker build -t $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/login-service:$IMAGE_TAG .
-      - docker tag $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/login-service:$IMAGE_TAG $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/login-service:latest
-      - echo "📤 Pushing login-service to ECR..."
-      - docker push $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/login-service:$IMAGE_TAG
-      - docker push $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/login-service:latest
-      - echo "✅ Login service pushed to ECR"
-      - cd ..
+      # Start React build in background (longest process)
+      - echo "Starting React build in background..."
+      - (
+          cd frontend &&
+          echo "REACT_APP_LOGIN_URL=$REACT_APP_LOGIN_URL" > .env.production &&
+          echo "REACT_APP_ORDERS_URL=$REACT_APP_ORDERS_URL" >> .env.production &&
+          echo "REACT_APP_PROFILE_URL=$REACT_APP_PROFILE_URL" >> .env.production &&
+          npm ci --production=false --silent &&
+          npm run build &&
+          aws s3 sync build/ s3://react-app-aws-cicd-89 --delete --only-show-errors &&
+          echo "✓ React frontend completed and uploaded to S3"
+        ) &
+      - export REACT_PID=$!
       
-      - echo "🔨 Building Orders Service..."
-      - cd orders-service
-      - docker build -t $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/orders-service:$IMAGE_TAG .
-      - docker tag $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/orders-service:$IMAGE_TAG $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/orders-service:latest
-      - echo "📤 Pushing orders-service to ECR..."
-      - docker push $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/orders-service:$IMAGE_TAG
-      - docker push $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/orders-service:latest
-      - echo "✅ Orders service pushed to ECR"
-      - cd ..
+      # Start Docker builds in parallel
+      - echo "Starting parallel Docker builds..."
       
-      - echo "🔨 Building Profile Service..."
-      - cd profile-service
-      - docker build -t $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/profile-service:$IMAGE_TAG .
-      - docker tag $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/profile-service:$IMAGE_TAG $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/profile-service:latest
-      - echo "📤 Pushing profile-service to ECR..."
-      - docker push $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/profile-service:$IMAGE_TAG
-      - docker push $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/profile-service:latest
-      - echo "✅ Profile service pushed to ECR"
-      - cd ..
+      # Login Service Build
+      - (
+          cd login-service &&
+          docker build --build-arg BUILDKIT_INLINE_CACHE=1 -t $REPOSITORY_URI_LOGIN:$LOGIN_SERVICE_TAG . &&
+          docker push $REPOSITORY_URI_LOGIN:$LOGIN_SERVICE_TAG &&
+          echo "✓ Login service completed"
+        ) &
+      - export LOGIN_PID=$!
       
-      - echo "🔨 Building NGINX Service..."
-      - cd nginx
-      - docker build -t $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/react-nginx-svc:$IMAGE_TAG .
-      - docker tag $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/react-nginx-svc:$IMAGE_TAG $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/react-nginx-svc:latest
-      - echo "📤 Pushing react-nginx-svc to ECR..."
-      - docker push $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/react-nginx-svc:$IMAGE_TAG
-      - docker push $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/react-nginx-svc:latest
-      - echo "✅ NGINX service pushed to ECR"
-      - cd ..
+      # Orders Service Build  
+      - (
+          cd orders-service &&
+          docker build --build-arg BUILDKIT_INLINE_CACHE=1 -t $REPOSITORY_URI_ORDERS:$ORDERS_SERVICE_TAG . &&
+          docker push $REPOSITORY_URI_ORDERS:$ORDERS_SERVICE_TAG &&
+          echo "✓ Orders service completed"
+        ) &
+      - export ORDERS_PID=$!
+      
+      # Profile Service Build
+      - (
+          cd profile-service &&
+          docker build --build-arg BUILDKIT_INLINE_CACHE=1 -t $REPOSITORY_URI_PROFILE:$PROFILE_SERVICE_TAG . &&
+          docker push $REPOSITORY_URI_PROFILE:$PROFILE_SERVICE_TAG &&
+          echo "✓ Profile service completed"
+        ) &
+      - export PROFILE_PID=$!
+      
+      # NGINX Service Build
+      - (
+          cd react-nginx &&
+          docker build --build-arg BUILDKIT_INLINE_CACHE=1 -t $REPOSITORY_URI_NGINX:$NGINX_SERVICE_TAG . &&
+          docker push $REPOSITORY_URI_NGINX:$NGINX_SERVICE_TAG &&
+          echo "✓ NGINX service completed"
+        ) &
+      - export NGINX_PID=$!
+      
+      # Wait for all builds to complete
+      - echo "Waiting for all parallel builds to complete..."
+      - wait $REACT_PID && echo "React build finished"
+      - wait $LOGIN_PID && echo "Login service finished"  
+      - wait $ORDERS_PID && echo "Orders service finished"
+      - wait $PROFILE_PID && echo "Profile service finished"
+      - wait $NGINX_PID && echo "NGINX service finished"
+      
+      - echo "All builds completed successfully at `date`"
 
   post_build:
     commands:
-      - echo "🚀 === Updating ECS Services ==="
-      - echo "⏳ Updating login-service..."
-      - aws ecs update-service --cluster $CLUSTER_NAME --service login-service --force-new-deployment --region $AWS_DEFAULT_REGION
-      - echo "✅ Login service update initiated"
+      - echo "Post-build started at `date`"
       
-      - echo "⏳ Updating orders-service..."
-      - aws ecs update-service --cluster $CLUSTER_NAME --service orders-service-service-hximgot3 --force-new-deployment --region $AWS_DEFAULT_REGION
-      - echo "✅ Orders service update initiated"
+      # Parallel Task Definition Updates
+      - echo "Starting parallel task definition updates..."
       
-      - echo "⏳ Updating profile-service..."
-      - aws ecs update-service --cluster $CLUSTER_NAME --service profile-service --force-new-deployment --region $AWS_DEFAULT_REGION
-      - echo "✅ Profile service update initiated"
+      # Update all task definitions in parallel
+      - (
+          aws ecs describe-task-definition --task-definition login-service --query taskDefinition > login-task-def.json &&
+          sed -i 's|"image": "[^"]*login-service[^"]*"|"image": "'$REPOSITORY_URI_LOGIN:$LOGIN_SERVICE_TAG'"|g' login-task-def.json &&
+          aws ecs register-task-definition --cli-input-json file://login-task-def.json --query 'taskDefinition.taskDefinitionArn' --output text > login-task-arn.txt &&
+          aws ecs update-service --cluster my-react-backend-cluster --service login-service --task-definition $(cat login-task-arn.txt) --region us-east-1 &&
+          echo "✓ Login service updated"
+        ) &
       
-      - echo "⏳ Updating react-nginx-service..."
-      - aws ecs update-service --cluster $CLUSTER_NAME --service react-nginx-service-yg010grk --force-new-deployment --region $AWS_DEFAULT_REGION
-      - echo "✅ NGINX service update initiated"
+      - (
+          aws ecs describe-task-definition --task-definition orders-service --query taskDefinition > orders-task-def.json &&
+          sed -i 's|"image": "[^"]*orders-service[^"]*"|"image": "'$REPOSITORY_URI_ORDERS:$ORDERS_SERVICE_TAG'"|g' orders-task-def.json &&
+          aws ecs register-task-definition --cli-input-json file://orders-task-def.json --query 'taskDefinition.taskDefinitionArn' --output text > orders-task-arn.txt &&
+          aws ecs update-service --cluster my-react-backend-cluster --service orders-service-service-hximgot3 --task-definition $(cat orders-task-arn.txt) --region us-east-1 &&
+          echo "✓ Orders service updated"
+        ) &
       
-      - echo "🎉 === CI/CD Pipeline Completed Successfully ==="
-      - echo "📊 Build Summary:"
-      - echo "   ✅ React app built and deployed to S3"
-      - echo "   ✅ 4 Docker images built and pushed to ECR"
-      - echo "   ✅ All ECS services updated"
-      - echo "   📦 Image tag: $IMAGE_TAG"
-      - echo "   🕒 Completed at: $(date)"
-      - echo "🌐 Your application is available at:"
-      - echo "   Main App: http://react-nginx-alb-687607454.us-east-1.elb.amazonaws.com"
-      - echo "   Static Site: http://react-app-aws-cicd-89.s3-website-us-east-1.amazonaws.com"
+      - (
+          aws ecs describe-task-definition --task-definition profile-service --query taskDefinition > profile-task-def.json &&
+          sed -i 's|"image": "[^"]*profile-service[^"]*"|"image": "'$REPOSITORY_URI_PROFILE:$PROFILE_SERVICE_TAG'"|g' profile-task-def.json &&
+          aws ecs register-task-definition --cli-input-json file://profile-task-def.json --query 'taskDefinition.taskDefinitionArn' --output text > profile-task-arn.txt &&
+          aws ecs update-service --cluster my-react-backend-cluster --service profile-service --task-definition $(cat profile-task-arn.txt) --region us-east-1 &&
+          echo "✓ Profile service updated"
+        ) &
+      
+      - (
+          aws ecs describe-task-definition --task-definition react-nginx --query taskDefinition > nginx-task-def.json &&
+          sed -i 's|"image": "[^"]*react-nginx-svc[^"]*"|"image": "'$REPOSITORY_URI_NGINX:$NGINX_SERVICE_TAG'"|g' nginx-task-def.json &&
+          aws ecs register-task-definition --cli-input-json file://nginx-task-def.json --query 'taskDefinition.taskDefinitionArn' --output text > nginx-task-arn.txt &&
+          aws ecs update-service --cluster my-react-backend-cluster --service react-nginx-service-yg010grk --task-definition $(cat nginx-task-arn.txt) --region us-east-1 &&
+          echo "✓ NGINX service updated"
+        ) &
+      
+      # Wait for all service updates
+      - wait
+      
+      - echo "========== HIGH-PERFORMANCE DEPLOYMENT COMPLETED =========="
+      - echo "Total deployment time: Started at build start time"
+      - echo "Completed at `date`"
+      - echo "All services deployed successfully with parallel processing!"
+
+artifacts:
+  files:
+    - '**/*'

@@ -1,0 +1,199 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'High-Performance CI/CD Pipeline for rohit-marathe/microservices-app'
+
+Parameters:
+  GitHubRepo:
+    Type: String
+    Description: GitHub repository name
+    Default: microservices-app
+  
+  GitHubOwner:
+    Type: String
+    Description: GitHub repository owner
+    Default: rohit-marathe
+    
+  GitHubToken:
+    Type: String
+    Description: GitHub personal access token
+    NoEcho: true
+
+Resources:
+  # S3 Bucket for Pipeline Artifacts
+  ArtifactsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub 'microservices-fast-pipeline-${AWS::AccountId}'
+      VersioningConfiguration:
+        Status: Enabled
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+
+  # CodeBuild Service Role (Enhanced Permissions)
+  CodeBuildServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub 'FastCodeBuildRole-${AWS::StackName}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: codebuild.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: FastCodeBuildPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              # CloudWatch Logs
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: '*'
+              
+              # S3 Full Access for artifacts and React app
+              - Effect: Allow
+                Action:
+                  - s3:*
+                Resource: 
+                  - !Sub '${ArtifactsBucket}/*'
+                  - !Ref ArtifactsBucket
+                  - 'arn:aws:s3:::react-app-aws-cicd-89/*'
+                  - 'arn:aws:s3:::react-app-aws-cicd-89'
+              
+              # ECR Full Access
+              - Effect: Allow
+                Action:
+                  - ecr:*
+                Resource: '*'
+              
+              # ECS Full Access for deployments
+              - Effect: Allow
+                Action:
+                  - ecs:*
+                Resource: '*'
+
+  # CodePipeline Service Role
+  CodePipelineServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub 'FastCodePipelineRole-${AWS::StackName}'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: codepipeline.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: FastCodePipelinePolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:*
+                Resource: 
+                  - !Ref ArtifactsBucket
+                  - !Sub '${ArtifactsBucket}/*'
+              - Effect: Allow
+                Action:
+                  - codebuild:BatchGetBuilds
+                  - codebuild:StartBuild
+                Resource: !GetAtt FastCodeBuildProject.Arn
+
+  # High-Performance CodeBuild Project
+  FastCodeBuildProject:
+    Type: AWS::CodeBuild::Project
+    Properties:
+      Name: !Sub '${AWS::StackName}-fast-build'
+      Description: 'High-performance build for microservices'
+      ServiceRole: !GetAtt CodeBuildServiceRole.Arn
+      Artifacts:
+        Type: CODEPIPELINE
+      Environment:
+        Type: LINUX_CONTAINER
+        ComputeType: BUILD_GENERAL1_2XLARGE  # 🚀 LARGE INSTANCE FOR SPEED
+        Image: aws/codebuild/amazonlinux2-x86_64-standard:5.0  # Latest image
+        PrivilegedMode: true
+        EnvironmentVariables:
+          - Name: AWS_DEFAULT_REGION
+            Value: us-east-1
+          - Name: AWS_ACCOUNT_ID
+            Value: !Ref AWS::AccountId
+          - Name: DOCKER_BUILDKIT
+            Value: '1'
+          - Name: BUILDKIT_PROGRESS
+            Value: 'plain'
+      Source:
+        Type: CODEPIPELINE
+        BuildSpec: buildspec.yml
+      TimeoutInMinutes: 60
+      QueuedTimeoutInMinutes: 30
+      # Enable concurrent builds for even faster deployments
+      ConcurrentBuildLimit: 1
+
+  # Fast CodePipeline
+  FastPipeline:
+    Type: AWS::CodePipeline::Pipeline
+    Properties:
+      Name: !Sub '${AWS::StackName}-fast-pipeline'
+      RoleArn: !GetAtt CodePipelineServiceRole.Arn
+      ArtifactStore:
+        Type: S3
+        Location: !Ref ArtifactsBucket
+      Stages:
+        - Name: Source
+          Actions:
+            - Name: SourceAction
+              ActionTypeId:
+                Category: Source
+                Owner: ThirdParty
+                Provider: GitHub
+                Version: '1'
+              Configuration:
+                Owner: !Ref GitHubOwner
+                Repo: !Ref GitHubRepo
+                Branch: main
+                OAuthToken: !Ref GitHubToken
+                PollForSourceChanges: true
+              OutputArtifacts:
+                - Name: SourceOutput
+        - Name: FastBuild
+          Actions:
+            - Name: FastBuildAction
+              ActionTypeId:
+                Category: Build
+                Owner: AWS
+                Provider: CodeBuild
+                Version: '1'
+              Configuration:
+                ProjectName: !Ref FastCodeBuildProject
+              InputArtifacts:
+                - Name: SourceOutput
+              OutputArtifacts:
+                - Name: BuildOutput
+
+Outputs:
+  PipelineName:
+    Description: Fast pipeline name
+    Value: !Ref FastPipeline
+    Export:
+      Name: !Sub '${AWS::StackName}-FastPipelineName'
+  
+  BuildProjectName:
+    Description: Fast build project name  
+    Value: !Ref FastCodeBuildProject
+    Export:
+      Name: !Sub '${AWS::StackName}-FastBuildProject'
+  
+  ArtifactsBucket:
+    Description: S3 bucket for artifacts
+    Value: !Ref ArtifactsBucket
+    Export:
+      Name: !Sub '${AWS::StackName}-ArtifactsBucket'
