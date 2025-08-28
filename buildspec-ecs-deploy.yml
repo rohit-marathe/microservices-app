@@ -1,0 +1,65 @@
+version: 0.2
+
+env:
+  variables:
+    AWS_ACCOUNT_ID: $AWS_ACCOUNT_ID
+    AWS_DEFAULT_REGION: $AWS_DEFAULT_REGION
+    ECS_CLUSTER_NAME: $ECS_CLUSTER_NAME
+    IMAGE_TAG: $IMAGE_TAG
+
+phases:
+  pre_build:
+    commands:
+      - echo "Starting ECS deployment on `date`"
+      - echo "Using image tag: $IMAGE_TAG"
+      - echo "ECS Cluster: $ECS_CLUSTER_NAME"
+
+  build:
+    commands:
+      - echo "Updating ECS Task Definitions and Services..."
+      
+      # Update login-service
+      - echo "Updating login-service task definition..."
+      - TASK_DEF=$(aws ecs describe-task-definition --task-definition "login-service" --region $AWS_DEFAULT_REGION)
+      - NEW_TASK_DEF=$(echo $TASK_DEF | jq --arg IMAGE "$AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/login-service:$IMAGE_TAG" '.taskDefinition | .containerDefinitions[0].image = $IMAGE | del(.taskDefinitionArn) | del(.revision) | del(.status) | del(.requiresAttributes) | del(.compatibilities) | del(.registeredAt) | del(.registeredBy)')
+      - NEW_TASK_INFO=$(aws ecs register-task-definition --region $AWS_DEFAULT_REGION --cli-input-json "$NEW_TASK_DEF")
+      - NEW_REVISION=$(echo $NEW_TASK_INFO | jq '.taskDefinition.revision')
+      - aws ecs update-service --cluster $ECS_CLUSTER_NAME --service login-service --task-definition login-service:$NEW_REVISION --force-new-deployment
+      - echo "login-service updated to revision: $NEW_REVISION"
+      
+      # Update orders-service
+      - echo "Updating orders-service task definition..."
+      - TASK_DEF=$(aws ecs describe-task-definition --task-definition "orders-service" --region $AWS_DEFAULT_REGION)
+      - NEW_TASK_DEF=$(echo $TASK_DEF | jq --arg IMAGE "$AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/orders-service:$IMAGE_TAG" '.taskDefinition | .containerDefinitions[0].image = $IMAGE | del(.taskDefinitionArn) | del(.revision) | del(.status) | del(.requiresAttributes) | del(.compatibilities) | del(.registeredAt) | del(.registeredBy)')
+      - NEW_TASK_INFO=$(aws ecs register-task-definition --region $AWS_DEFAULT_REGION --cli-input-json "$NEW_TASK_DEF")
+      - NEW_REVISION=$(echo $NEW_TASK_INFO | jq '.taskDefinition.revision')
+      - aws ecs update-service --cluster $ECS_CLUSTER_NAME --service orders-service --task-definition orders-service:$NEW_REVISION --force-new-deployment
+      - echo "orders-service updated to revision: $NEW_REVISION"
+      
+      # Update profile-service
+      - echo "Updating profile-service task definition..."
+      - TASK_DEF=$(aws ecs describe-task-definition --task-definition "profile-service" --region $AWS_DEFAULT_REGION)
+      - NEW_TASK_DEF=$(echo $TASK_DEF | jq --arg IMAGE "$AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/profile-service:$IMAGE_TAG" '.taskDefinition | .containerDefinitions[0].image = $IMAGE | del(.taskDefinitionArn) | del(.revision) | del(.status) | del(.requiresAttributes) | del(.compatibilities) | del(.registeredAt) | del(.registeredBy)')
+      - NEW_TASK_INFO=$(aws ecs register-task-definition --region $AWS_DEFAULT_REGION --cli-input-json "$NEW_TASK_DEF")
+      - NEW_REVISION=$(echo $NEW_TASK_INFO | jq '.taskDefinition.revision')
+      - aws ecs update-service --cluster $ECS_CLUSTER_NAME --service profile-service --task-definition profile-service:$NEW_REVISION --force-new-deployment
+      - echo "profile-service updated to revision: $NEW_REVISION"
+      
+      # Update react-nginx
+      - echo "Updating react-nginx task definition..."
+      - TASK_DEF=$(aws ecs describe-task-definition --task-definition "react-nginx" --region $AWS_DEFAULT_REGION)
+      - NEW_TASK_DEF=$(echo $TASK_DEF | jq --arg IMAGE "$AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/react-nginx-svc:$IMAGE_TAG" '.taskDefinition | .containerDefinitions[0].image = $IMAGE | del(.taskDefinitionArn) | del(.revision) | del(.status) | del(.requiresAttributes) | del(.compatibilities) | del(.registeredAt) | del(.registeredBy)')
+      - NEW_TASK_INFO=$(aws ecs register-task-definition --region $AWS_DEFAULT_REGION --cli-input-json "$NEW_TASK_DEF")
+      - NEW_REVISION=$(echo $NEW_TASK_INFO | jq '.taskDefinition.revision')
+      - aws ecs update-service --cluster $ECS_CLUSTER_NAME --service react-nginx --task-definition react-nginx:$NEW_REVISION --force-new-deployment
+      - echo "react-nginx updated to revision: $NEW_REVISION"
+
+  post_build:
+    commands:
+      - echo "ECS deployment completed successfully on `date`"
+      - echo "All services updated with image tag: $IMAGE_TAG"
+      - echo "Services deployed:"
+      - echo "- login-service"
+      - echo "- orders-service" 
+      - echo "- profile-service"
+      - echo "- react-nginx"
