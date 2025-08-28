@@ -7,16 +7,9 @@ env:
     ORDERS_SERVICE_TAG: "latest" 
     PROFILE_SERVICE_TAG: "latest"
     NGINX_SERVICE_TAG: "latest"
-    # React environment variables
     REACT_APP_LOGIN_URL: "http://react-nginx-alb-687607454.us-east-1.elb.amazonaws.com/login"
     REACT_APP_ORDERS_URL: "http://react-nginx-alb-687607454.us-east-1.elb.amazonaws.com/orders"
     REACT_APP_PROFILE_URL: "http://react-nginx-alb-687607454.us-east-1.elb.amazonaws.com/profile"
-  exported-variables:
-    - AWS_ACCOUNT_ID
-    - LOGIN_SERVICE_TAG
-    - ORDERS_SERVICE_TAG
-    - PROFILE_SERVICE_TAG
-    - NGINX_SERVICE_TAG
 
 phases:
   install:
@@ -24,150 +17,78 @@ phases:
       nodejs: 18
       docker: 20
     commands:
-      - echo "Installing dependencies on high-performance build environment..."
-      - echo "Build started at `date`"
-      # Optimize npm for faster installs
-      - npm config set registry https://registry.npmjs.org/
-      - npm config set fetch-timeout 300000
-      - npm config set fetch-retries 5
+      - echo "Installing dependencies..."
 
   pre_build:
     commands:
-      - echo "Pre-build phase started on `date`"
+      - echo "Pre-build phase started"
       - export AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
       - echo "AWS Account ID: $AWS_ACCOUNT_ID"
       
-      # Set ECR repository URIs
+      # ECR Repository URIs
       - export REPOSITORY_URI_LOGIN=$AWS_ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com/login-service
       - export REPOSITORY_URI_ORDERS=$AWS_ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com/orders-service
       - export REPOSITORY_URI_PROFILE=$AWS_ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com/profile-service
       - export REPOSITORY_URI_NGINX=$AWS_ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com/react-nginx-svc
       
-      # Login to ECR (parallel authentication)
+      # Login to ECR
       - echo "Logging in to Amazon ECR..."
       - aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin $AWS_ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com
-      
-      # Optimize Docker for faster builds
-      - export DOCKER_BUILDKIT=1
-      - export BUILDKIT_PROGRESS=plain
 
   build:
     commands:
-      - echo "High-performance build started at `date`"
+      - echo "Build phase started"
       
-      # PARALLEL BUILD APPROACH - Using background processes
+      # Build React Frontend
+      - echo "Building React frontend..."
+      - cd frontend
+      - echo "REACT_APP_LOGIN_URL=$REACT_APP_LOGIN_URL" > .env.production
+      - echo "REACT_APP_ORDERS_URL=$REACT_APP_ORDERS_URL" >> .env.production
+      - echo "REACT_APP_PROFILE_URL=$REACT_APP_PROFILE_URL" >> .env.production
+      - npm install
+      - npm run build
+      - echo "Uploading React build to S3..."
+      - aws s3 sync build/ s3://react-app-aws-cicd-89 --delete
+      - echo "✓ React frontend completed"
+      - cd ..
       
-      # Start React build in background (longest process)
-      - echo "Starting React build in background..."
-      - (
-          cd frontend &&
-          echo "REACT_APP_LOGIN_URL=$REACT_APP_LOGIN_URL" > .env.production &&
-          echo "REACT_APP_ORDERS_URL=$REACT_APP_ORDERS_URL" >> .env.production &&
-          echo "REACT_APP_PROFILE_URL=$REACT_APP_PROFILE_URL" >> .env.production &&
-          npm ci --production=false --silent &&
-          npm run build &&
-          aws s3 sync build/ s3://react-app-aws-cicd-89 --delete --only-show-errors &&
-          echo "✓ React frontend completed and uploaded to S3"
-        ) &
-      - export REACT_PID=$!
+      # Build Login Service
+      - echo "Building Login service..."
+      - cd login-service
+      - docker build -t $REPOSITORY_URI_LOGIN:$LOGIN_SERVICE_TAG .
+      - docker push $REPOSITORY_URI_LOGIN:$LOGIN_SERVICE_TAG
+      - echo "✓ Login service completed"
+      - cd ..
       
-      # Start Docker builds in parallel
-      - echo "Starting parallel Docker builds..."
+      # Build Orders Service
+      - echo "Building Orders service..."
+      - cd orders-service
+      - docker build -t $REPOSITORY_URI_ORDERS:$ORDERS_SERVICE_TAG .
+      - docker push $REPOSITORY_URI_ORDERS:$ORDERS_SERVICE_TAG
+      - echo "✓ Orders service completed"
+      - cd ..
       
-      # Login Service Build
-      - (
-          cd login-service &&
-          docker build --build-arg BUILDKIT_INLINE_CACHE=1 -t $REPOSITORY_URI_LOGIN:$LOGIN_SERVICE_TAG . &&
-          docker push $REPOSITORY_URI_LOGIN:$LOGIN_SERVICE_TAG &&
-          echo "✓ Login service completed"
-        ) &
-      - export LOGIN_PID=$!
+      # Build Profile Service
+      - echo "Building Profile service..."
+      - cd profile-service
+      - docker build -t $REPOSITORY_URI_PROFILE:$PROFILE_SERVICE_TAG .
+      - docker push $REPOSITORY_URI_PROFILE:$PROFILE_SERVICE_TAG
+      - echo "✓ Profile service completed"
+      - cd ..
       
-      # Orders Service Build  
-      - (
-          cd orders-service &&
-          docker build --build-arg BUILDKIT_INLINE_CACHE=1 -t $REPOSITORY_URI_ORDERS:$ORDERS_SERVICE_TAG . &&
-          docker push $REPOSITORY_URI_ORDERS:$ORDERS_SERVICE_TAG &&
-          echo "✓ Orders service completed"
-        ) &
-      - export ORDERS_PID=$!
-      
-      # Profile Service Build
-      - (
-          cd profile-service &&
-          docker build --build-arg BUILDKIT_INLINE_CACHE=1 -t $REPOSITORY_URI_PROFILE:$PROFILE_SERVICE_TAG . &&
-          docker push $REPOSITORY_URI_PROFILE:$PROFILE_SERVICE_TAG &&
-          echo "✓ Profile service completed"
-        ) &
-      - export PROFILE_PID=$!
-      
-      # NGINX Service Build
-      - (
-          cd react-nginx &&
-          docker build --build-arg BUILDKIT_INLINE_CACHE=1 -t $REPOSITORY_URI_NGINX:$NGINX_SERVICE_TAG . &&
-          docker push $REPOSITORY_URI_NGINX:$NGINX_SERVICE_TAG &&
-          echo "✓ NGINX service completed"
-        ) &
-      - export NGINX_PID=$!
-      
-      # Wait for all builds to complete
-      - echo "Waiting for all parallel builds to complete..."
-      - wait $REACT_PID && echo "React build finished"
-      - wait $LOGIN_PID && echo "Login service finished"  
-      - wait $ORDERS_PID && echo "Orders service finished"
-      - wait $PROFILE_PID && echo "Profile service finished"
-      - wait $NGINX_PID && echo "NGINX service finished"
-      
-      - echo "All builds completed successfully at `date`"
+      # Build NGINX Service
+      - echo "Building NGINX service..."
+      - cd react-nginx
+      - docker build -t $REPOSITORY_URI_NGINX:$NGINX_SERVICE_TAG .
+      - docker push $REPOSITORY_URI_NGINX:$NGINX_SERVICE_TAG
+      - echo "✓ NGINX service completed"
+      - cd ..
 
   post_build:
     commands:
-      - echo "Post-build started at `date`"
-      
-      # Parallel Task Definition Updates
-      - echo "Starting parallel task definition updates..."
-      
-      # Update all task definitions in parallel
-      - (
-          aws ecs describe-task-definition --task-definition login-service --query taskDefinition > login-task-def.json &&
-          sed -i 's|"image": "[^"]*login-service[^"]*"|"image": "'$REPOSITORY_URI_LOGIN:$LOGIN_SERVICE_TAG'"|g' login-task-def.json &&
-          aws ecs register-task-definition --cli-input-json file://login-task-def.json --query 'taskDefinition.taskDefinitionArn' --output text > login-task-arn.txt &&
-          aws ecs update-service --cluster my-react-backend-cluster --service login-service --task-definition $(cat login-task-arn.txt) --region us-east-1 &&
-          echo "✓ Login service updated"
-        ) &
-      
-      - (
-          aws ecs describe-task-definition --task-definition orders-service --query taskDefinition > orders-task-def.json &&
-          sed -i 's|"image": "[^"]*orders-service[^"]*"|"image": "'$REPOSITORY_URI_ORDERS:$ORDERS_SERVICE_TAG'"|g' orders-task-def.json &&
-          aws ecs register-task-definition --cli-input-json file://orders-task-def.json --query 'taskDefinition.taskDefinitionArn' --output text > orders-task-arn.txt &&
-          aws ecs update-service --cluster my-react-backend-cluster --service orders-service-service-hximgot3 --task-definition $(cat orders-task-arn.txt) --region us-east-1 &&
-          echo "✓ Orders service updated"
-        ) &
-      
-      - (
-          aws ecs describe-task-definition --task-definition profile-service --query taskDefinition > profile-task-def.json &&
-          sed -i 's|"image": "[^"]*profile-service[^"]*"|"image": "'$REPOSITORY_URI_PROFILE:$PROFILE_SERVICE_TAG'"|g' profile-task-def.json &&
-          aws ecs register-task-definition --cli-input-json file://profile-task-def.json --query 'taskDefinition.taskDefinitionArn' --output text > profile-task-arn.txt &&
-          aws ecs update-service --cluster my-react-backend-cluster --service profile-service --task-definition $(cat profile-task-arn.txt) --region us-east-1 &&
-          echo "✓ Profile service updated"
-        ) &
-      
-      - (
-          aws ecs describe-task-definition --task-definition react-nginx --query taskDefinition > nginx-task-def.json &&
-          sed -i 's|"image": "[^"]*react-nginx-svc[^"]*"|"image": "'$REPOSITORY_URI_NGINX:$NGINX_SERVICE_TAG'"|g' nginx-task-def.json &&
-          aws ecs register-task-definition --cli-input-json file://nginx-task-def.json --query 'taskDefinition.taskDefinitionArn' --output text > nginx-task-arn.txt &&
-          aws ecs update-service --cluster my-react-backend-cluster --service react-nginx-service-yg010grk --task-definition $(cat nginx-task-arn.txt) --region us-east-1 &&
-          echo "✓ NGINX service updated"
-        ) &
-      
-      # Wait for all service updates
-      - wait
-      
-      - echo "========== HIGH-PERFORMANCE DEPLOYMENT COMPLETED =========="
-      - echo "Total deployment time: Started at build start time"
-      - echo "Completed at `date`"
-      - echo "All services deployed successfully with parallel processing!"
-
-artifacts:
-  files:
-    - '**/*'
+      - echo "Updating ECS services..."
+      - aws ecs update-service --cluster my-react-backend-cluster --service login-service --force-new-deployment --region us-east-1
+      - aws ecs update-service --cluster my-react-backend-cluster --service orders-service-service-hximgot3 --force-new-deployment --region us-east-1
+      - aws ecs update-service --cluster my-react-backend-cluster --service profile-service --force-new-deployment --region us-east-1
+      - aws ecs update-service --cluster my-react-backend-cluster --service react-nginx-service-yg010grk --force-new-deployment --region us-east-1
+      - echo "✅ All services updated successfully!"
