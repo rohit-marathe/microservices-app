@@ -1,0 +1,52 @@
+version: 0.2
+
+env:
+  variables:
+    AWS_ACCOUNT_ID: $AWS_ACCOUNT_ID
+    AWS_DEFAULT_REGION: $AWS_DEFAULT_REGION
+    LOGIN_SERVICE_TAG: $LOGIN_SERVICE_TAG
+    ORDERS_SERVICE_TAG: $ORDERS_SERVICE_TAG
+    PROFILE_SERVICE_TAG: $PROFILE_SERVICE_TAG
+    REACT_NGINX_TAG: $REACT_NGINX_TAG
+
+phases:
+  pre_build:
+    commands:
+      - echo "Logging in to Amazon ECR..."
+      - aws ecr get-login-password --region $AWS_DEFAULT_REGION | docker login --username AWS --password-stdin $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com
+
+  build:
+    commands:
+      - echo "Docker build started on `date`"
+      
+      # Build login-service
+      - echo "Building login-service Docker image..."
+      - docker build -t login-service:$LOGIN_SERVICE_TAG ./login-service
+      - docker tag login-service:$LOGIN_SERVICE_TAG $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/login-service:$LOGIN_SERVICE_TAG
+      
+      # Build orders-service
+      - echo "Building orders-service Docker image..."
+      - docker build -t orders-service:$ORDERS_SERVICE_TAG ./orders-service
+      - docker tag orders-service:$ORDERS_SERVICE_TAG $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/orders-service:$ORDERS_SERVICE_TAG
+      
+      # Build profile-service
+      - echo "Building profile-service Docker image..."
+      - docker build -t profile-service:$PROFILE_SERVICE_TAG ./profile-service
+      - docker tag profile-service:$PROFILE_SERVICE_TAG $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/profile-service:$PROFILE_SERVICE_TAG
+      
+      # Build nginx with React app
+      - echo "Building react-nginx-svc Docker image..."
+      - docker build -t react-nginx-svc:$REACT_NGINX_TAG ./nginx
+      - docker tag react-nginx-svc:$REACT_NGINX_TAG $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/react-nginx-svc:$REACT_NGINX_TAG
+
+  post_build:
+    commands:
+      - echo "Pushing Docker images to ECR..."
+      
+      # Push all images to ECR
+      - docker push $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/login-service:$LOGIN_SERVICE_TAG
+      - docker push $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/orders-service:$ORDERS_SERVICE_TAG
+      - docker push $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/profile-service:$PROFILE_SERVICE_TAG
+      - docker push $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/react-nginx-svc:$REACT_NGINX_TAG
+      
+      - echo "All Docker images pushed to ECR successfully!"
