@@ -10,56 +10,78 @@ env:
 phases:
   pre_build:
     commands:
-      - echo "Starting ECS deployment on `date`"
-      - "echo Using image tag $IMAGE_TAG"
-      - "echo ECS Cluster $ECS_CLUSTER_NAME"
+      - echo "Starting ECS deployment"
+      - echo "Using image tag $IMAGE_TAG"
+      - echo "ECS Cluster $ECS_CLUSTER_NAME"
+      - echo "AWS Account $AWS_ACCOUNT_ID"
+      - echo "AWS Region $AWS_DEFAULT_REGION"
 
   build:
     commands:
-      - echo "Updating ECS Task Definitions and Services..."
+      - echo "Updating ECS Task Definitions and Services"
       
       # Update login-service
-      - echo "Updating login-service task definition..."
-      - TASK_DEF=$(aws ecs describe-task-definition --task-definition "login-service" --region $AWS_DEFAULT_REGION)
-      - NEW_TASK_DEF=$(echo $TASK_DEF | jq --arg IMAGE "$AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/login-service:$IMAGE_TAG" '.taskDefinition | .containerDefinitions[0].image = $IMAGE | del(.taskDefinitionArn) | del(.revision) | del(.status) | del(.requiresAttributes) | del(.compatibilities) | del(.registeredAt) | del(.registeredBy)')
-      - NEW_TASK_INFO=$(aws ecs register-task-definition --region $AWS_DEFAULT_REGION --cli-input-json "$NEW_TASK_DEF")
-      - NEW_REVISION=$(echo $NEW_TASK_INFO | jq '.taskDefinition.revision')
-      - aws ecs update-service --cluster $ECS_CLUSTER_NAME --service login-service --task-definition login-service:$NEW_REVISION --force-new-deployment
-      - "echo login-service updated to revision $NEW_REVISION"
+      - echo "Updating login-service task definition"
+      - |
+        if aws ecs describe-services --cluster $ECS_CLUSTER_NAME --services login-service --region $AWS_DEFAULT_REGION > /dev/null 2>&1; then
+          echo "login-service exists, updating..."
+          TASK_DEF=$(aws ecs describe-task-definition --task-definition "login-service" --region $AWS_DEFAULT_REGION)
+          NEW_TASK_DEF=$(echo $TASK_DEF | jq --arg IMAGE "$AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/login-service:$IMAGE_TAG" '.taskDefinition | .containerDefinitions[0].image = $IMAGE | del(.taskDefinitionArn) | del(.revision) | del(.status) | del(.requiresAttributes) | del(.compatibilities) | del(.registeredAt) | del(.registeredBy)')
+          NEW_TASK_INFO=$(aws ecs register-task-definition --region $AWS_DEFAULT_REGION --cli-input-json "$NEW_TASK_DEF")
+          NEW_REVISION=$(echo $NEW_TASK_INFO | jq '.taskDefinition.revision')
+          aws ecs update-service --cluster $ECS_CLUSTER_NAME --service login-service --task-definition login-service:$NEW_REVISION --force-new-deployment
+          echo "login-service updated to revision $NEW_REVISION"
+        else
+          echo "login-service does not exist, skipping..."
+        fi
       
       # Update orders-service
-      - echo "Updating orders-service task definition..."
-      - TASK_DEF=$(aws ecs describe-task-definition --task-definition "orders-service" --region $AWS_DEFAULT_REGION)
-      - NEW_TASK_DEF=$(echo $TASK_DEF | jq --arg IMAGE "$AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/orders-service:$IMAGE_TAG" '.taskDefinition | .containerDefinitions[0].image = $IMAGE | del(.taskDefinitionArn) | del(.revision) | del(.status) | del(.requiresAttributes) | del(.compatibilities) | del(.registeredAt) | del(.registeredBy)')
-      - NEW_TASK_INFO=$(aws ecs register-task-definition --region $AWS_DEFAULT_REGION --cli-input-json "$NEW_TASK_DEF")
-      - NEW_REVISION=$(echo $NEW_TASK_INFO | jq '.taskDefinition.revision')
-      - aws ecs update-service --cluster $ECS_CLUSTER_NAME --service orders-service --task-definition orders-service:$NEW_REVISION --force-new-deployment
-      - "echo orders-service updated to revision $NEW_REVISION"
+      - echo "Updating orders-service task definition"
+      - |
+        if aws ecs describe-services --cluster $ECS_CLUSTER_NAME --services orders-service --region $AWS_DEFAULT_REGION > /dev/null 2>&1; then
+          echo "orders-service exists, updating..."
+          TASK_DEF=$(aws ecs describe-task-definition --task-definition "orders-service" --region $AWS_DEFAULT_REGION)
+          NEW_TASK_DEF=$(echo $TASK_DEF | jq --arg IMAGE "$AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/orders-service:$IMAGE_TAG" '.taskDefinition | .containerDefinitions[0].image = $IMAGE | del(.taskDefinitionArn) | del(.revision) | del(.status) | del(.requiresAttributes) | del(.compatibilities) | del(.registeredAt) | del(.registeredBy)')
+          NEW_TASK_INFO=$(aws ecs register-task-definition --region $AWS_DEFAULT_REGION --cli-input-json "$NEW_TASK_DEF")
+          NEW_REVISION=$(echo $NEW_TASK_INFO | jq '.taskDefinition.revision')
+          aws ecs update-service --cluster $ECS_CLUSTER_NAME --service orders-service --task-definition orders-service:$NEW_REVISION --force-new-deployment
+          echo "orders-service updated to revision $NEW_REVISION"
+        else
+          echo "orders-service does not exist, skipping..."
+        fi
       
       # Update profile-service
-      - echo "Updating profile-service task definition..."
-      - TASK_DEF=$(aws ecs describe-task-definition --task-definition "profile-service" --region $AWS_DEFAULT_REGION)
-      - NEW_TASK_DEF=$(echo $TASK_DEF | jq --arg IMAGE "$AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/profile-service:$IMAGE_TAG" '.taskDefinition | .containerDefinitions[0].image = $IMAGE | del(.taskDefinitionArn) | del(.revision) | del(.status) | del(.requiresAttributes) | del(.compatibilities) | del(.registeredAt) | del(.registeredBy)')
-      - NEW_TASK_INFO=$(aws ecs register-task-definition --region $AWS_DEFAULT_REGION --cli-input-json "$NEW_TASK_DEF")
-      - NEW_REVISION=$(echo $NEW_TASK_INFO | jq '.taskDefinition.revision')
-      - aws ecs update-service --cluster $ECS_CLUSTER_NAME --service profile-service --task-definition profile-service:$NEW_REVISION --force-new-deployment
-      - "echo profile-service updated to revision $NEW_REVISION"
+      - echo "Updating profile-service task definition"
+      - |
+        if aws ecs describe-services --cluster $ECS_CLUSTER_NAME --services profile-service --region $AWS_DEFAULT_REGION > /dev/null 2>&1; then
+          echo "profile-service exists, updating..."
+          TASK_DEF=$(aws ecs describe-task-definition --task-definition "profile-service" --region $AWS_DEFAULT_REGION)
+          NEW_TASK_DEF=$(echo $TASK_DEF | jq --arg IMAGE "$AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/profile-service:$IMAGE_TAG" '.taskDefinition | .containerDefinitions[0].image = $IMAGE | del(.taskDefinitionArn) | del(.revision) | del(.status) | del(.requiresAttributes) | del(.compatibilities) | del(.registeredAt) | del(.registeredBy)')
+          NEW_TASK_INFO=$(aws ecs register-task-definition --region $AWS_DEFAULT_REGION --cli-input-json "$NEW_TASK_DEF")
+          NEW_REVISION=$(echo $NEW_TASK_INFO | jq '.taskDefinition.revision')
+          aws ecs update-service --cluster $ECS_CLUSTER_NAME --service profile-service --task-definition profile-service:$NEW_REVISION --force-new-deployment
+          echo "profile-service updated to revision $NEW_REVISION"
+        else
+          echo "profile-service does not exist, skipping..."
+        fi
       
       # Update react-nginx
-      - echo "Updating react-nginx task definition..."
-      - TASK_DEF=$(aws ecs describe-task-definition --task-definition "react-nginx" --region $AWS_DEFAULT_REGION)
-      - NEW_TASK_DEF=$(echo $TASK_DEF | jq --arg IMAGE "$AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/react-nginx-svc:$IMAGE_TAG" '.taskDefinition | .containerDefinitions[0].image = $IMAGE | del(.taskDefinitionArn) | del(.revision) | del(.status) | del(.requiresAttributes) | del(.compatibilities) | del(.registeredAt) | del(.registeredBy)')
-      - NEW_TASK_INFO=$(aws ecs register-task-definition --region $AWS_DEFAULT_REGION --cli-input-json "$NEW_TASK_DEF")
-      - NEW_REVISION=$(echo $NEW_TASK_INFO | jq '.taskDefinition.revision')
-      - aws ecs update-service --cluster $ECS_CLUSTER_NAME --service react-nginx --task-definition react-nginx:$NEW_REVISION --force-new-deployment
-      - "echo react-nginx updated to revision $NEW_REVISION"
+      - echo "Updating react-nginx task definition"
+      - |
+        if aws ecs describe-services --cluster $ECS_CLUSTER_NAME --services react-nginx --region $AWS_DEFAULT_REGION > /dev/null 2>&1; then
+          echo "react-nginx exists, updating..."
+          TASK_DEF=$(aws ecs describe-task-definition --task-definition "react-nginx" --region $AWS_DEFAULT_REGION)
+          NEW_TASK_DEF=$(echo $TASK_DEF | jq --arg IMAGE "$AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/react-nginx-svc:$IMAGE_TAG" '.taskDefinition | .containerDefinitions[0].image = $IMAGE | del(.taskDefinitionArn) | del(.revision) | del(.status) | del(.requiresAttributes) | del(.compatibilities) | del(.registeredAt) | del(.registeredBy)')
+          NEW_TASK_INFO=$(aws ecs register-task-definition --region $AWS_DEFAULT_REGION --cli-input-json "$NEW_TASK_DEF")
+          NEW_REVISION=$(echo $NEW_TASK_INFO | jq '.taskDefinition.revision')
+          aws ecs update-service --cluster $ECS_CLUSTER_NAME --service react-nginx --task-definition react-nginx:$NEW_REVISION --force-new-deployment
+          echo "react-nginx updated to revision $NEW_REVISION"
+        else
+          echo "react-nginx does not exist, skipping..."
+        fi
 
   post_build:
     commands:
-      - echo "ECS deployment completed successfully on `date`"
-      - "echo All services updated with image tag $IMAGE_TAG"
-      - echo "Services deployed:"
-      - echo "- login-service"
-      - echo "- orders-service" 
-      - echo "- profile-service"
-      - echo "- react-nginx"
+      - echo "ECS deployment completed successfully"
+      - echo "All existing services updated with image tag $IMAGE_TAG"
+      - echo "Complete CI/CD pipeline finished!"
