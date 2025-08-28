@@ -1,0 +1,96 @@
+version: 0.2
+
+env:
+  variables:
+    AWS_DEFAULT_REGION: us-east-1
+    CLUSTER_NAME: my-react-backend-cluster
+    S3_BUCKET: react-app-aws-cicd-89
+
+phases:
+  pre_build:
+    commands:
+      - echo "Starting CI/CD Pipeline on `date`"
+      - echo "Logging in to Amazon ECR..."
+      - aws ecr get-login-password --region $AWS_DEFAULT_REGION | docker login --username AWS --password-stdin $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com
+      - IMAGE_TAG=$(echo $CODEBUILD_RESOLVED_SOURCE_VERSION | cut -c 1-7)
+      - echo "Image tag will be: $IMAGE_TAG"
+
+  build:
+    commands:
+      - echo "=== Building React Frontend ==="
+      - cd frontend
+      - echo "Installing dependencies..."
+      - npm install
+      - echo "Setting up production environment variables from CodeBuild..."
+      - echo "REACT_APP_LOGIN_URL=$REACT_APP_LOGIN_URL" > .env.production
+      - echo "REACT_APP_ORDERS_URL=$REACT_APP_ORDERS_URL" >> .env.production
+      - echo "REACT_APP_PROFILE_URL=$REACT_APP_PROFILE_URL" >> .env.production
+      - echo "Environment variables set for production build"
+      - echo "Building React application..."
+      - npm run build
+      - echo "Uploading React build to S3..."
+      - aws s3 sync build/ s3://$S3_BUCKET --delete
+      - echo "✅ React frontend uploaded to S3"
+      - cd ..
+      
+      - echo "=== Building Docker Images ==="
+      
+      - echo "🔨 Building Login Service..."
+      - cd login-service
+      - docker build -t $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/login-service:$IMAGE_TAG .
+      - docker tag $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/login-service:$IMAGE_TAG $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/login-service:latest
+      - echo "Pushing login-service to ECR..."
+      - docker push $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/login-service:$IMAGE_TAG
+      - docker push $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/login-service:latest
+      - echo "✅ Login service pushed to ECR"
+      - cd ..
+      
+      - echo "🔨 Building Orders Service..."
+      - cd orders-service
+      - docker build -t $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/orders-service:$IMAGE_TAG .
+      - docker tag $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/orders-service:$IMAGE_TAG $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/orders-service:latest
+      - echo "Pushing orders-service to ECR..."
+      - docker push $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/orders-service:$IMAGE_TAG
+      - docker push $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/orders-service:latest
+      - echo "✅ Orders service pushed to ECR"
+      - cd ..
+      
+      - echo "🔨 Building Profile Service..."
+      - cd profile-service
+      - docker build -t $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/profile-service:$IMAGE_TAG .
+      - docker tag $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/profile-service:$IMAGE_TAG $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/profile-service:latest
+      - echo "Pushing profile-service to ECR..."
+      - docker push $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/profile-service:$IMAGE_TAG
+      - docker push $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/profile-service:latest
+      - echo "✅ Profile service pushed to ECR"
+      - cd ..
+      
+      - echo "🔨 Building NGINX Service..."
+      - cd nginx
+      - docker build -t $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/react-nginx-svc:$IMAGE_TAG .
+      - docker tag $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/react-nginx-svc:$IMAGE_TAG $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/react-nginx-svc:latest
+      - echo "Pushing react-nginx-svc to ECR..."
+      - docker push $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/react-nginx-svc:$IMAGE_TAG
+      - docker push $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/react-nginx-svc:latest
+      - echo "✅ NGINX service pushed to ECR"
+      - cd ..
+
+  post_build:
+    commands:
+      - echo "=== Updating ECS Services ==="
+      - echo "🚀 Updating login-service..."
+      - aws ecs update-service --cluster $CLUSTER_NAME --service login-service --force-new-deployment --region $AWS_DEFAULT_REGION
+      
+      - echo "🚀 Updating orders-service..."
+      - aws ecs update-service --cluster $CLUSTER_NAME --service orders-service-service-hximgot3 --force-new-deployment --region $AWS_DEFAULT_REGION
+      
+      - echo "🚀 Updating profile-service..."
+      - aws ecs update-service --cluster $CLUSTER_NAME --service profile-service --force-new-deployment --region $AWS_DEFAULT_REGION
+      
+      - echo "🚀 Updating react-nginx-service..."
+      - aws ecs update-service --cluster $CLUSTER_NAME --service react-nginx-service-yg010grk --force-new-deployment --region $AWS_DEFAULT_REGION
+      
+      - echo "✅ All ECS services update initiated!"
+      - echo "🎉 CI/CD Pipeline completed successfully on `date`"
+      - echo "🌐 Your app should be available at: http://react-nginx-alb-687607454.us-east-1.elb.amazonaws.com"
+      
