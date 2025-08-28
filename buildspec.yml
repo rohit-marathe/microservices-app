@@ -1,94 +1,20 @@
 version: 0.2
 
-env:
-  variables:
-    AWS_DEFAULT_REGION: "us-east-1"
-    LOGIN_SERVICE_TAG: "latest"
-    ORDERS_SERVICE_TAG: "latest" 
-    PROFILE_SERVICE_TAG: "latest"
-    NGINX_SERVICE_TAG: "latest"
-    REACT_APP_LOGIN_URL: "http://react-nginx-alb-687607454.us-east-1.elb.amazonaws.com/login"
-    REACT_APP_ORDERS_URL: "http://react-nginx-alb-687607454.us-east-1.elb.amazonaws.com/orders"
-    REACT_APP_PROFILE_URL: "http://react-nginx-alb-687607454.us-east-1.elb.amazonaws.com/profile"
-
 phases:
   install:
     runtime-versions:
       nodejs: 18
-      docker: 20
     commands:
-      - echo "Installing dependencies..."
-
-  pre_build:
-    commands:
-      - echo "Pre-build phase started"
-      - export AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
-      - echo "AWS Account ID: $AWS_ACCOUNT_ID"
-      
-      # ECR Repository URIs
-      - export REPOSITORY_URI_LOGIN=$AWS_ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com/login-service
-      - export REPOSITORY_URI_ORDERS=$AWS_ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com/orders-service
-      - export REPOSITORY_URI_PROFILE=$AWS_ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com/profile-service
-      - export REPOSITORY_URI_NGINX=$AWS_ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com/react-nginx-svc
-      
-      # Login to ECR
-      - echo "Logging in to Amazon ECR..."
-      - aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin $AWS_ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com
+      - echo Installing dependencies...
+      - npm install
 
   build:
     commands:
-      - echo "Build phase started"
-      
-      # Build React Frontend
-      - echo "Building React frontend..."
-      - cd frontend
-      - echo "REACT_APP_LOGIN_URL=$REACT_APP_LOGIN_URL" > .env.production
-      - echo "REACT_APP_ORDERS_URL=$REACT_APP_ORDERS_URL" >> .env.production
-      - echo "REACT_APP_PROFILE_URL=$REACT_APP_PROFILE_URL" >> .env.production
-      - npm install
+      - echo Building the React app...
       - npm run build
-      - echo "Uploading React build to S3..."
-      - aws s3 sync build/ s3://react-app-aws-cicd-89 --delete
-      - echo "✓ React frontend completed"
-      - cd ..
-      
-      # Build Login Service
-      - echo "Building Login service..."
-      - cd login-service
-      - docker build -t $REPOSITORY_URI_LOGIN:$LOGIN_SERVICE_TAG .
-      - docker push $REPOSITORY_URI_LOGIN:$LOGIN_SERVICE_TAG
-      - echo "✓ Login service completed"
-      - cd ..
-      
-      # Build Orders Service
-      - echo "Building Orders service..."
-      - cd orders-service
-      - docker build -t $REPOSITORY_URI_ORDERS:$ORDERS_SERVICE_TAG .
-      - docker push $REPOSITORY_URI_ORDERS:$ORDERS_SERVICE_TAG
-      - echo "✓ Orders service completed"
-      - cd ..
-      
-      # Build Profile Service
-      - echo "Building Profile service..."
-      - cd profile-service
-      - docker build -t $REPOSITORY_URI_PROFILE:$PROFILE_SERVICE_TAG .
-      - docker push $REPOSITORY_URI_PROFILE:$PROFILE_SERVICE_TAG
-      - echo "✓ Profile service completed"
-      - cd ..
-      
-      # Build NGINX Service
-      - echo "Building NGINX service..."
-      - cd react-nginx
-      - docker build -t $REPOSITORY_URI_NGINX:$NGINX_SERVICE_TAG .
-      - docker push $REPOSITORY_URI_NGINX:$NGINX_SERVICE_TAG
-      - echo "✓ NGINX service completed"
-      - cd ..
 
-  post_build:
-    commands:
-      - echo "Updating ECS services..."
-      - aws ecs update-service --cluster my-react-backend-cluster --service login-service --force-new-deployment --region us-east-1
-      - aws ecs update-service --cluster my-react-backend-cluster --service orders-service-service-hximgot3 --force-new-deployment --region us-east-1
-      - aws ecs update-service --cluster my-react-backend-cluster --service profile-service --force-new-deployment --region us-east-1
-      - aws ecs update-service --cluster my-react-backend-cluster --service react-nginx-service-yg010grk --force-new-deployment --region us-east-1
-      - echo "✅ All services updated successfully!"
+artifacts:
+  files:
+    - '**/*'
+  base-directory: build
+  discard-paths: no
