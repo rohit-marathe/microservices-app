@@ -5,17 +5,20 @@ phases:
     runtime-versions:
       nodejs: 18
     commands:
-      - echo Installing dependencies...
+      - echo "Installing dependencies..."
       - cd frontend
       - npm install
 
   build:
     commands:
-      - echo Building the React app...
+      - echo "Building the React app..."
+      - echo "Using REACT_APP_LOGIN_URL: $REACT_APP_LOGIN_URL"
+      - echo "Using REACT_APP_ORDERS_URL: $REACT_APP_ORDERS_URL"
+      - echo "Using REACT_APP_PROFILE_URL: $REACT_APP_PROFILE_URL"
       - npm run build
 
 artifacts:
   files:
     - '**/*'
   base-directory: frontend/build
-  discard-paths: no  
+  discard-paths: no
